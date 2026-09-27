@@ -85,11 +85,12 @@ constexpr int      kManListCntOff   = 0x656;  // u16 maneuverList count
 
 // hu.proto NAVTurnMessage.TURN_EVENT — used as the hud_send kTurnIcons index.
 // (kTurnIcons in hud_send.cpp covers 0..19; 13 = roundabout, handled there by
-// roundabout_icon(angle, side).)
+// roundabout_icon(angle, side). [AU] 15 is unassigned in the proto; this fork uses it for
+// "turn at end of road" so it can reach the HUD's T-junction glyphs 31/32.)
 constexpr uint32_t EV_DEPART = 1, EV_NAME_CHANGE = 2, EV_SLIGHT = 3, EV_TURN = 4,
                    EV_SHARP = 5, EV_UTURN = 6, EV_ON_RAMP = 7, EV_OFF_RAMP = 8,
                    EV_FORK = 9, EV_MERGE = 10, EV_ROUNDABOUT = 13, EV_STRAIGHT = 14,
-                   EV_FERRY = 16, EV_DEST = 19;
+                   EV_TURN_AT_END = 15, EV_FERRY = 16, EV_DEST = 19;
 constexpr uint32_t SIDE_LEFT = 1, SIDE_RIGHT = 2, SIDE_NONE = 3;
 
 // --- latched display state (persists between bursts; the 2Hz hud keep-alive resends it) ---
@@ -180,8 +181,8 @@ Maneuver classify(uint32_t mtype, uint32_t junctionType,
     switch (mtype) {
     case 1:  m.event = EV_TURN;   m.side = SIDE_LEFT;  break;  // LeftTurn
     case 2:  m.event = EV_TURN;   m.side = SIDE_RIGHT; break;  // RightTurn
-    case 20: m.event = EV_TURN;   m.side = SIDE_LEFT;  break;  // LeftTurnAtEnd
-    case 21: m.event = EV_TURN;   m.side = SIDE_RIGHT; break;  // RightTurnAtEnd
+    case 20: m.event = EV_TURN_AT_END; m.side = SIDE_LEFT;  break;  // LeftTurnAtEnd  -> HUD 31 (T-junction)
+    case 21: m.event = EV_TURN_AT_END; m.side = SIDE_RIGHT; break;  // RightTurnAtEnd -> HUD 32 (T-junction)
     case 47: m.event = EV_SHARP;  m.side = SIDE_LEFT;  break;  // SharpLeft
     case 48: m.event = EV_SHARP;  m.side = SIDE_RIGHT; break;  // SharpRight
     case 49: m.event = EV_SLIGHT; m.side = SIDE_LEFT;  break;  // SlightLeft
@@ -193,10 +194,20 @@ Maneuver classify(uint32_t mtype, uint32_t junctionType,
     case 53: m.event = EV_FORK;   m.side = SIDE_RIGHT; break;  // ChangeHighwayRight
     case 4:  m.event = EV_UTURN;  m.side = (driveSide == 1) ? SIDE_RIGHT : SIDE_LEFT; break; // UTurn
     case 26: m.event = EV_UTURN;  m.side = (driveSide == 1) ? SIDE_RIGHT : SIDE_LEFT; break; // UTurnWhenPossible
-    case 8:  m.event = EV_OFF_RAMP; m.side = SIDE_NONE;  break; // OffRamp
+    // [AU] OffRamp has no side in its type (SIDE_NONE drew the straight arrow). Apple's signed
+    // exit angle gives the side the ramp leaves on (neg = left, pos = right); with no angle, exits
+    // are on the kerb side of the road. -> HUD 30 (off-ramp left) / 7 (off-ramp right).
+    case 8:  m.event = EV_OFF_RAMP;
+             m.side  = (junctionAngle < 0) ? SIDE_LEFT
+                     : (junctionAngle > 0) ? SIDE_RIGHT
+                     : (driveSide == 1)    ? SIDE_LEFT : SIDE_RIGHT;
+             break; // OffRamp
     case 22: m.event = EV_OFF_RAMP; m.side = SIDE_LEFT;  break; // HighwayOffRampLeft
     case 23: m.event = EV_OFF_RAMP; m.side = SIDE_RIGHT; break; // HighwayOffRampRight
-    case 9:  m.event = EV_ON_RAMP;  m.side = SIDE_NONE;  break; // OnRamp
+    // [AU] OnRamp -> merge glyph. Nothing in iAP2 says which side the ramp joins the highway
+    // (the exit angle is the bend off the local road), so use the traffic side: in LHT the ramp
+    // joins from the left and merges right -> HUD 17; in RHT -> HUD 16.
+    case 9:  m.event = EV_MERGE; m.side = (driveSide == 1) ? SIDE_RIGHT : SIDE_LEFT; break; // OnRamp
     case 15: case 16: case 17: m.event = EV_FERRY; m.side = SIDE_NONE; break; // Ferry
     case 10: case 12: case 27:  m.event = EV_DEST; m.side = SIDE_NONE;  break; // Arrive*
     case 24: m.event = EV_DEST; m.side = SIDE_LEFT;  break;  // ArriveDestinationLeft

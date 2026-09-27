@@ -237,6 +237,8 @@ enum MazdaIcon : uint8_t {
     HUD_MERGE_LEFT        = 16,
     HUD_MERGE_RIGHT       = 17,
     HUD_OFF_RAMP_LEFT     = 30,
+    HUD_T_LEFT            = 31,  // [AU] left at a T-junction (name read from the icon photo)
+    HUD_T_RIGHT           = 32,  // [AU] right at a T-junction
     HUD_DESTINATION_LEFT  = 33,
     HUD_DESTINATION_RIGHT = 34,
     HUD_FLAG_LEFT         = 35,
@@ -249,13 +251,16 @@ enum MazdaIcon : uint8_t {
 //   side_index: 0=LEFT, 1=RIGHT, 2=UNSPECIFIED/STRAIGHT
 //
 // Indexed by hu.proto NAVTurnMessage.TURN_EVENT (0..19, sparse at
-// 15 and 18). A `0` entry means "no glyph" — the HUD draws blank.
+// 15 and 18; [AU] 15 is reused, see below). A `0` entry means
+// "no glyph" — the HUD draws blank.
 // ROUNDABOUT_ENTER_AND_EXIT (13) is handled separately by
 // roundabout_icon() because the icon depends on exit angle.
 //
-// This table is copied verbatim from reference hud.cpp's turns[][]
-// (just renamed). The reference table has been validated on real
-// cars; do not "improve" it without a road test.
+// This table is copied from reference hud.cpp's turns[][] (just
+// renamed), which has been validated on real cars; do not "improve"
+// it without a road test. Differences from the reference: row 8 uses
+// the off-ramp glyphs 30/7, and [AU] row 15 (unassigned in the proto)
+// carries nav.cpp's EV_TURN_AT_END -> T-junction glyphs 31/32.
 constexpr uint8_t kTurnIcons[20][3] = {
     /*  0 TURN_UNKNOWN                  */ {0, 0, 0},
     /*  1 TURN_DEPART                   */ {HUD_FLAG_LEFT, HUD_FLAG_RIGHT, HUD_FLAG},
@@ -272,7 +277,7 @@ constexpr uint8_t kTurnIcons[20][3] = {
     /* 12 TURN_ROUNDABOUT_EXIT          */ {0, 0, 0},
     /* 13 TURN_ROUNDABOUT_ENTER_AND_EXIT*/ {0, 0, 0},  // handled by roundabout_icon()
     /* 14 TURN_STRAIGHT                 */ {HUD_STRAIGHT, HUD_STRAIGHT, HUD_STRAIGHT},
-    /* 15 unassigned in proto           */ {0, 0, 0},
+    /* 15 [AU] TURN_AT_END (not in proto)*/ {HUD_T_LEFT, HUD_T_RIGHT, HUD_STRAIGHT},
     /* 16 TURN_FERRY_BOAT               */ {0, 0, 0},
     /* 17 TURN_FERRY_TRAIN              */ {0, 0, 0},
     /* 18 unassigned in proto           */ {0, 0, 0},
