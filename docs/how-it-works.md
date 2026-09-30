@@ -71,6 +71,12 @@ messages. Offsets are the ones `nav.cpp` reads:
   context types skipped) and shows the one whose index matches `maneuverList[0]`, or the next
   one when that index points at a context entry.
 
+Google Maps fills in fewer fields than Apple Maps. In iPhone packet logs from drives in
+Australia on 2026-09-28, every Google Maps route start and reroute put `StartRoute` at idx 0, so skipping
+idx 0 is safe for it too. None of its maneuvers carried an exit angle, a junction-element
+angle, exit info or linked lane guidance, and its final arrival maneuver reported driving
+side Right even in left-hand traffic.
+
 Wire-level field lists for 0x5200–0x5204 are documented in
 [luka-dev/mib2q-carplay-rgi `docs/rgd/rgd-tlv.md`](https://github.com/luka-dev/mib2q-carplay-rgi/blob/main/docs/rgd/rgd-tlv.md).
 Apple's [CarPlay Developer Guide](https://developer.apple.com/download/files/CarPlay-Developer-Guide.pdf)
@@ -87,7 +93,7 @@ Apple's [CarPlay Developer Guide](https://developer.apple.com/download/files/Car
 | 3 | straightAhead | 1 |
 | 4, 26 | uTurn, uTurnWhenPossible | 10 in left-hand traffic, 13 in right-hand |
 | 6, 7, 19, 28–46 | enter/exit roundabout, U-turn at roundabout, roundaboutExit1–19 | 37–60, by exit angle (`roundabout_icon()`) |
-| 8 | offRamp | 30 or 7 from the exit-angle sign; the kerb side when there is no angle |
+| 8 | offRamp | 30 or 7 from the exit-angle sign; the kerb side when there is no angle (always the case with Google Maps) |
 | 9 | onRamp | 17 (merge right) in left-hand traffic, 16 (merge left) in right-hand |
 | 10, 12, 27 | arrive | 8 |
 | 13 / 14 | keepLeft / keepRight | 15 / 14 (fork) |

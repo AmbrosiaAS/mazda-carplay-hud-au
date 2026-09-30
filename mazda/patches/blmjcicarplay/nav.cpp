@@ -197,6 +197,8 @@ Maneuver classify(uint32_t mtype, uint32_t junctionType,
     // [AU] OffRamp has no side in its type (SIDE_NONE drew the straight arrow). Apple's signed
     // exit angle gives the side the ramp leaves on (neg = left, pos = right); with no angle, exits
     // are on the kerb side of the road. -> HUD 30 (off-ramp left) / 7 (off-ramp right).
+    // Google Maps leaves the angle out of every maneuver (iPhone packet logs, 2026-09-28), so on
+    // Google Maps the kerb-side fallback is the path that runs.
     case 8:  m.event = EV_OFF_RAMP;
              m.side  = (junctionAngle < 0) ? SIDE_LEFT
                      : (junctionAngle > 0) ? SIDE_RIGHT
