@@ -35,7 +35,7 @@ void hud_on_status(uint32_t status);
 
 // 0x501 NAVTurnMessage. `road_name` may be NULL or empty.
 //   turn_side  - 1=LEFT, 2=RIGHT, 3=UNSPECIFIED (proto TURN_SIDE)
-//   turn_event - sparse 0..19  (proto TURN_EVENT)
+//   turn_event - sparse 0..19  (proto TURN_EVENT; [AU] 15 = turn at end of road)
 //   turn_angle - degrees, signed
 //   turn_number - maneuver / exit number
 //

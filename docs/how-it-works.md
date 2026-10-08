@@ -49,39 +49,62 @@ stream the maneuver data over iAP2 in the first place — the installer sets it.
   the HUD sender and flips `g_armed` so the passive `msgrcv` tap begins decoding maneuvers.
 
 ## iAP2 nav message model (reverse-engineered)
-- **MANEUVER `0x8059` (840 B)** — a *window* of the next ~5 maneuvers (idx 0..N):
-  - `index`             = `u32 @ 0x20 >> 16`
-  - `maneuverDesc`      = text @ `0x24` (256 B) — the live instruction text
-  - `maneuverType`      = `u32 @ 0x124`
-  - `distBetweenManeuver` = `u32 @ 0x128`
+The OEM `ipoddev` process decodes the phone's iAP2 route-guidance messages
+(`RouteGuidanceUpdate` 0x5201 and `RouteGuidanceManeuverUpdate` 0x5202) into two SysV
+messages. Offsets are the ones `nav.cpp` reads:
+
+- **MANEUVER `0x8059` (840 B)** — one message per maneuver in the phone's list (idx 0..N),
+  re-sent from idx 0 on every recalculation:
+  - `validInfo` = `u32 @ 0x1c` — field-presence bits (`0x10` road name, `0x400` exit angle,
+    `0x800` roundabout junction)
+  - `index` = `u32 @ 0x20 >> 16`
+  - `maneuverDesc` = text @ `0x24` (256 B) — the instruction text; `u32 @ 0x124` is its length
+  - `maneuverType` = `u32 @ 0x128` — Apple's `CPManeuverType` (table below)
   - `afterManeuverRoadName` = text @ `0x12c` (256 B)
-- **GUIDANCE `0x8058` (1628 B)** — `distToNextManeuver` (metres, counts down) @ `0x34c`.
-- **Selection:** idx 0 is the current heading/segment (depart / continue / head-compass)
-  and is never displayed. `distToNextManeuver` counts down to the first *real* maneuver in
-  the window; when it is passed the window slides (idx 0 becomes the new heading). So the
-  bridge latches the first real maneuver's icon + the road it leads onto, paired with the
-  live distance.
+  - `driveSide` = `u32 @ 0x33c` — 0 right-hand traffic, 1 left-hand traffic
+  - `junctionType` = `u32 @ 0x340` — 0 intersection, 1 roundabout
+  - `junctionElementExitAngle` = `s16 @ 0x346` — signed degrees: 0 straight, negative left,
+    positive right
+- **GUIDANCE `0x8058` (1628 B)** — `distToNextManeuver` (metres, counts down) @ `0x34c`;
+  `maneuverList[0]`, the index of the next maneuver, `u16 @ 0x458`; list count `u16 @ 0x656`.
+- **Selection:** the bridge buffers the displayable maneuvers of the current list (idx 0 and
+  context types skipped) and shows the one whose index matches `maneuverList[0]`, or the next
+  one when that index points at a context entry.
 
-## maneuverType catalogue (confirmed from real-drive captures)
-Apple encodes the turn **side** inside `maneuverType` (e.g. 11 vs 12 are distinct values);
-there is no separate left/right field.
+Google Maps fills in fewer fields than Apple Maps. In iPhone packet logs from drives in
+Australia on 2026-09-28, every Google Maps route start and reroute put `StartRoute` at idx 0, so skipping
+idx 0 is safe for it too. None of its maneuvers carried an exit angle, a junction-element
+angle, exit info or linked lane guidance, and its final arrival maneuver reported driving
+side Right even in left-hand traffic.
 
-| value | meaning | HUD treatment |
-|------:|---------|---------------|
-| 8  | continue / on-road (`desc` = road name) | CONTEXT (skip) |
-| 11 | "Rẽ trái" — turn left | TURN-LEFT |
-| 12 | "Rẽ phải" — turn right | TURN-RIGHT |
-| 19 | "về phía X" — depart / proceed toward | CONTEXT |
-| 21 | continue onto road | CONTEXT |
-| 24 / 25 / 27 | head North / East / South-West (compass) | CONTEXT |
-| 34 | name-change onto road (`desc` = road name) | CONTEXT |
-| 45 | "về phía ĐCT…" — ramp / merge onto expressway | SLIGHT |
-| 56 | fork (multi-road choice) | FORK |
+Wire-level field lists for 0x5200–0x5204 are documented in
+[luka-dev/mib2q-carplay-rgi `docs/rgd/rgd-tlv.md`](https://github.com/luka-dev/mib2q-carplay-rgi/blob/main/docs/rgd/rgd-tlv.md).
+Apple's [CarPlay Developer Guide](https://developer.apple.com/download/files/CarPlay-Developer-Guide.pdf)
+("Share upcoming maneuvers with vehicle") defines each maneuver type.
 
-"CONTEXT" entries are leading route context that must be skipped so the distance/road-name
-track the next *actionable* maneuver. The set above is not exhaustive — new types are
-catalogued by reading the `desc` field of an existing full-drive capture against its
-`maneuverType` (the `desc` is the live Maps instruction text, so the mapping is direct).
+## maneuverType → HUD icon
+`maneuverType` is Apple's `CPManeuverType` enum. An earlier version of this document listed
+11 = left and 12 = right: those were read from `0x124`, the instruction-text length, not the type.
+
+| type | CPManeuverType | HUD code |
+|-----:|----------------|----------|
+| 0, 5, 11, 18 | noTurn, followRoad, startRoute, startRouteWithUTurn | context, not shown |
+| 1 / 2 | leftTurn / rightTurn | 2 / 3 |
+| 3 | straightAhead | 1 |
+| 4, 26 | uTurn, uTurnWhenPossible | 10 in left-hand traffic, 13 in right-hand |
+| 6, 7, 19, 28–46 | enter/exit roundabout, U-turn at roundabout, roundaboutExit1–19 | 37–60, by exit angle (`roundabout_icon()`) |
+| 8 | offRamp | 30 or 7 from the exit-angle sign; the kerb side when there is no angle (always the case with Google Maps) |
+| 9 | onRamp | 17 (merge right) in left-hand traffic, 16 (merge left) in right-hand |
+| 10, 12, 27 | arrive | 8 |
+| 13 / 14 | keepLeft / keepRight | 15 / 14 (fork) |
+| 15–17 | enter / exit / change ferry | blank |
+| 20 / 21 | leftTurnAtEnd / rightTurnAtEnd | 31 / 32 (T-junction) |
+| 22 / 23 | highwayOffRampLeft / Right | 30 / 7 |
+| 24 / 25 | arriveAtDestinationLeft / Right | 33 / 34 |
+| 47 / 48 | sharpLeftTurn / sharpRightTurn | 11 / 9 |
+| 49 / 50 | slightLeftTurn / slightRightTurn | 4 / 5 |
+| 51 | changeHighway | 1 |
+| 52 / 53 | changeHighwayLeft / Right | 15 / 14 |
 
 ## Why a passive `msgrcv` tap (and not the OEM vtable)
 The OEM receive thread inside `jciCARPLAY` pulls every devmgr event through the libc
